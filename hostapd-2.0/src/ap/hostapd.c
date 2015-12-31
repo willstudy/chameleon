@@ -942,6 +942,8 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 
 	ap_list_init(iface);
 
+	sleep(5);
+
 	if (hostapd_driver_commit(hapd) < 0) {
 		wpa_printf(MSG_ERROR, "%s: Failed to commit driver "
 			   "configuration", __func__);
