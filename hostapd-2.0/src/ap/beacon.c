@@ -35,6 +35,7 @@
 #include "beacon.h"
 #include "hs20.h"
 
+#define CREATE_AP
 
 #ifdef NEED_AP_MLME
 
@@ -362,6 +363,58 @@ void handle_probe_req(struct hostapd_data *hapd,
 	size_t i, resp_len;
 	int noack;
 	enum ssid_match_result res;
+
+#ifdef CREATE_AP
+	u8 mac_ascii[MAC_ASCII_LEN];
+	int flag = 1 ;      // flag = 1 : create AP   flag = 0 : don't create
+	struct hostapd_config *conf;
+	struct hostapd_iface *iface = hapd->iface;
+	size_t index;
+
+	mac_to_ascii(mac_ascii, mgmt->sa);
+
+	for( i = 0; i < iface->num_bss; i++ )
+	{
+		if( os_memcmp( mac_ascii, iface->bss[i]->conf->ssid.ssid , iface->bss[i]->conf->ssid.ssid_len) == 0 )
+		{
+			flag = 0;      // this "mac" AP has existed
+			break;
+		}
+	}
+
+	if( flag == 1 )   // only flag = 1 , can create a AP
+	{
+		wpa_printf(MSG_DEBUG, "new a ap for MAC:" MACSTR "\n", MAC2STR(mgmt->sa));
+
+		iface->num_bss++;
+		iface->bss = (struct hostapd_data **)realloc(iface->bss,
+				iface->num_bss * sizeof(struct hostapd_data *));
+		index = iface->num_bss - 1;
+
+		conf = iface->interfaces->config_read_cb(iface->config_fname);
+		conf->bss->ssid.ssid_len = MAC_ASCII_LEN;
+		memcpy(conf->bss->ssid.ssid, mac_ascii, MAC_ASCII_LEN);
+
+		iface->interfaces->set_security_params(conf->bss);
+		iface->bss[index] = hostapd_alloc_bss_data(iface, conf, conf->bss);
+
+		iface->bss[index]->driver = iface->bss[0]->driver;
+		iface->bss[index]->drv_priv = iface->bss[0]->drv_priv;
+		memcpy(iface->bss[index]->own_addr, iface->bss[0]->own_addr, ETH_ALEN);
+
+		do{
+			inc_byte_array(iface->bss[index]->own_addr, ETH_ALEN);
+		} while (mac_in_conf( conf , iface->bss[index]->own_addr));
+
+		if (init_newAP(iface->bss[index]))
+			wpa_printf(MSG_ERROR, "create ap fail!");
+
+		wpa_printf(MSG_DEBUG, "num_bss: %d\n", (int)iface->num_bss);
+
+		wpa_printf(MSG_INFO, "create a AP mac :"MACSTR"\n", MAC2STR(mgmt->sa));
+	}
+
+#endif
 
 	ie = mgmt->u.probe_req.variable;
 	if (len < IEEE80211_HDRLEN + sizeof(mgmt->u.probe_req))
