@@ -656,6 +656,89 @@ static int init_newAP(struct hostapd_data *hapd)
 	return 0;
 }
 
+int get_phrase( char * mac, char * psk )
+{
+	char * http_get = "GET /ChameleonAC/Select?mac=";
+	char request[8192];
+	char response[8192];
+	char buffer[128];
+	struct sockaddr_in addr;
+	size_t size = 0;
+
+	int sock_client = socket(AF_INET,SOCK_STREAM, 0);//sock fd
+
+	memset( &addr, 0, sizeof(addr));
+	memset( request, 0, 8192 );
+	memset( response, 0, 8192 );
+	memset( buffer, 0, 128 );
+
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(8080);  //server port
+	addr.sin_addr.s_addr = inet_addr("115.28.13.102");  ///server ip address
+
+	if (connect(sock_client, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	{
+		perror("connect");
+		return 0;
+	}
+
+	wpa_printf( MSG_INFO, "request %s 's psk \n", mac );
+
+	sprintf( request, "%s%s HTTP/1.1\r\n", http_get, mac );
+	write( sock_client, request, strlen(request) );
+	sprintf( request, "Host: %s\r\n\r\n", "115.28.13.102:8080");
+	write( sock_client, request, strlen(request) );
+
+  	char *p, *q;
+  	int i = 0;
+
+  	size = read( sock_client, response, 8192 );
+
+	if( size <= 0 )
+	{
+		wpa_printf( MSG_INFO, "%s : read error", __FUNCTION__ );
+		return 0;
+	}
+
+  	p = strtok( response, "\n" );
+	while( p )
+	{
+		i++;
+
+		if( i == 7 ) strcpy( buffer, p );
+		p = strtok( NULL, "\n" );
+	  }
+
+	  if( strlen(buffer) < 6 )
+	  {
+		  wpa_printf( MSG_INFO, "not register!\n" );
+		  return 0;
+	  }
+
+	  p = buffer;
+	  q = psk;
+
+	  while( *p != '\0' )
+	  {
+		if( *p == ':' )
+		{
+			p += 2;
+			while( *p != '"' )
+			{
+				*q++ = *p++;
+			}
+			*q = '\0';
+			break;
+		}
+		p++;
+	  }
+
+	wpa_printf( MSG_INFO, "%s 's psk : %s\n", mac, psk );
+
+	return 1;
+}
+
+
 static struct hostapd_data * get_hapd_ssid(struct hostapd_iface *iface,
 					    const u8 *bssid, const u8 *sa, const u16 fc)
 {
@@ -693,7 +776,24 @@ static struct hostapd_data * get_hapd_ssid(struct hostapd_iface *iface,
 	if (WLAN_FC_GET_TYPE(fc) == WLAN_FC_TYPE_MGMT
 		&& WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_AUTH)	{
 		size_t index;
+#if 1
+		int ret = 0;
+		char psk[16];
+		char mac[64];
 
+		fprintf( stdout, "AUTH start -------------\n" );
+		memset( mac, 0, 64 );
+		memset( psk, 0, 16 );
+		sprintf( mac, MACSTR, MAC2STR(sa) );
+
+		wpa_printf( MSG_INFO, "mac = %s\n", mac );
+
+		ret = get_phrase( mac, psk );
+
+		wpa_printf( MSG_INFO, "psk = %s\n", psk );
+
+		if( ret == 0 ) return NULL;    // NOT FIND THIS STA
+#endif
 		wpa_printf(MSG_DEBUG, "new a ap for MAC:" MACSTR "\n", MAC2STR(sa));
 
 		iface->num_bss++;
@@ -704,7 +804,12 @@ static struct hostapd_data * get_hapd_ssid(struct hostapd_iface *iface,
 		conf = iface->interfaces->config_read_cb(iface->config_fname);
 		conf->bss->ssid.ssid_len = MAC_ASCII_LEN;
 		memcpy(conf->bss->ssid.ssid, mac_ascii, MAC_ASCII_LEN);
-
+#if 1
+		os_free( conf->bss->ssid.wpa_passphrase );
+		conf->bss->ssid.wpa_passphrase = os_strdup(psk);
+		os_free( conf->bss->ssid.wpa_psk );
+		conf->bss->ssid.wpa_psk = NULL;
+#endif
 		iface->interfaces->set_security_params(conf->bss);
 		iface->bss[index] = hostapd_alloc_bss_data(iface, conf, conf->bss);
 
