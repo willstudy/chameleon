@@ -738,7 +738,6 @@ int get_phrase( char * mac, char * psk )
 	return 1;
 }
 
-
 static struct hostapd_data * get_hapd_ssid(struct hostapd_iface *iface,
 					    const u8 *bssid, const u8 *sa, const u16 fc)
 {
@@ -748,6 +747,73 @@ static struct hostapd_data * get_hapd_ssid(struct hostapd_iface *iface,
 
 	if (bssid == NULL)
 		return NULL;
+#if 1
+	memset( mac_ascii, 0, MAC_ASCII_LEN );
+	mac_to_ascii(mac_ascii, sa);
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (os_memcmp(mac_ascii, iface->bss[i]->conf->ssid.ssid, iface->bss[i]->conf->ssid.ssid_len) == 0) {
+			wpa_printf(MSG_DEBUG, "find sta : " MACSTR "\n", MAC2STR(sa));
+			return iface->bss[i];
+		}
+	}
+
+	if ((WLAN_FC_GET_TYPE(fc) == WLAN_FC_TYPE_MGMT
+		&& WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_PROBE_REQ)) /* probe request */
+	{
+//		wpa_printf( MSG_INFO, "probe request from "MACSTR"\n", MAC2STR(sa) );
+
+		size_t index;
+#if 1
+		int ret = 0;
+		char psk[16];
+		char mac[64];
+
+//		wpa_printf( MSG_INFO, "get phrase start -------------\n" );
+
+		memset( mac, 0, 64 );
+		memset( psk, 0, 16 );
+
+		sprintf( mac, MACSTR, MAC2STR(sa) );
+		ret = get_phrase( mac, psk );
+
+		//wpa_printf( MSG_INFO, "psk = %s\n", psk );
+
+		if( ret == 0 ) continue;    // NOT FIND THIS STA
+#endif
+		wpa_printf(MSG_INFO, "new a ap for MAC:" MACSTR "\n", MAC2STR(sa));
+
+		iface->num_bss++;
+		iface->bss = (struct hostapd_data **)realloc(iface->bss,
+						iface->num_bss * sizeof(struct hostapd_data *));
+		index = iface->num_bss - 1;
+
+		conf = iface->interfaces->config_read_cb(iface->config_fname);
+		conf->bss->ssid.ssid_len = MAC_ASCII_LEN;
+		memcpy(conf->bss->ssid.ssid, mac_ascii, MAC_ASCII_LEN);
+#if 1
+		os_free( conf->bss->ssid.wpa_passphrase );
+		conf->bss->ssid.wpa_passphrase = os_strdup(psk);
+		os_free( conf->bss->ssid.wpa_psk );
+		conf->bss->ssid.wpa_psk = NULL;
+#endif
+		iface->interfaces->set_security_params(conf->bss);
+		iface->bss[index] = hostapd_alloc_bss_data(iface, conf, conf->bss);
+
+		iface->bss[index]->driver = iface->bss[0]->driver;
+		iface->bss[index]->drv_priv = iface->bss[0]->drv_priv;
+		memcpy(iface->bss[index]->own_addr, iface->bss[0]->own_addr, ETH_ALEN);
+
+		if (init_newAP(iface->bss[index]))
+			return NULL;
+
+		wpa_printf(MSG_INFO, "num_bss: %d\n", (int)iface->num_bss);
+
+		return iface->bss[index];
+
+	}
+#endif
+
 	if (bssid[0] == 0xff && bssid[1] == 0xff && bssid[2] == 0xff &&
 	    bssid[3] == 0xff && bssid[4] == 0xff && bssid[5] == 0xff)
 		return HAPD_BROADCAST;
@@ -761,7 +827,7 @@ static struct hostapd_data * get_hapd_ssid(struct hostapd_iface *iface,
 		|| (WLAN_FC_GET_TYPE(fc) == WLAN_FC_TYPE_MGMT
 			&& WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_PROBE_RESP)) /* probe response */
 		return iface->bss[0];
-
+#if 0
 	mac_to_ascii(mac_ascii, sa);
 	for (i = 0; i < iface->num_bss; i++) {
 		if (os_memcmp(mac_ascii, iface->bss[i]->conf->ssid.ssid, iface->bss[i]->conf->ssid.ssid_len) == 0) {
@@ -769,7 +835,6 @@ static struct hostapd_data * get_hapd_ssid(struct hostapd_iface *iface,
 			return iface->bss[i];
 		}
 	}
-
 	/*mean don't match, then new one(ap)*/
 
 	/*just new when type is AUTH, before it doesn't need to new one, after it the new ap already have*/
@@ -781,13 +846,12 @@ static struct hostapd_data * get_hapd_ssid(struct hostapd_iface *iface,
 		char psk[16];
 		char mac[64];
 
-		fprintf( stdout, "AUTH start -------------\n" );
+		wpa_printf( MSG_INFO, "AUTH start -------------\n" );
+
 		memset( mac, 0, 64 );
 		memset( psk, 0, 16 );
+
 		sprintf( mac, MACSTR, MAC2STR(sa) );
-
-		wpa_printf( MSG_INFO, "mac = %s\n", mac );
-
 		ret = get_phrase( mac, psk );
 
 		wpa_printf( MSG_INFO, "psk = %s\n", psk );
@@ -824,7 +888,7 @@ static struct hostapd_data * get_hapd_ssid(struct hostapd_iface *iface,
 
 		return iface->bss[index];
 	}
-
+#endif
 	return NULL; /* if end there means it's exception */
 }
 
